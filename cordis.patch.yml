@@ -1,0 +1,17 @@
+# dsh-conversation-folders bundle 层：插入会话专用文件夹插件行。
+- insert:
+    - id: dsh-conversation-folders
+      name: dsh-conversation-folders
+      config:
+        # 总开关；关闭后停止管理文件夹（已有文件夹与映射不删除）
+        enabled: true
+        # 会话文件夹名前缀；实际名称形如 会话-29c06ebbe914
+        folderPrefix: 会话-
+        # 对话记录文件名（写在会话文件夹根目录，不会被分类整理移动）
+        transcriptName: 对话记录.md
+        # 每个调研回合结束后自动把散落文件按类别分文件夹存放并自动命名
+        categorize: true
+        # 自动命名前缀：调研<N>_<原文件名>
+        runNamePrefix: 调研
+        # 删除会话后等待会话产物从磁盘消失的最长时间（毫秒）
+        deleteTimeoutMs: 12000

@@ -1,0 +1,66 @@
+{
+  "name": "dsh-conversation-folders",
+  "version": "0.3.0",
+  "description": "DSH 插件：每个会话一个专属文件夹 + 对话记录存档 + 调研后自动分类归档 + 菜单内删除对话。首次使用会话时在工作区下创建 `会话-<短ID>/` 文件夹并把会话工作目录指过去（对话产生的所有文件都落在里面），自动把对话内容写入 `对话记录.md`；每次调研（回合）结束后把新增的表格、图表、文档等文件按类别自动分文件夹存放并自动命名（`调研<N>_<原名>`）；会话「…」菜单里提供「删除对话及其内容」，删除会话时连同文件夹及全部内容彻底删除。| DSH plugin: one dedicated folder per conversation, transcript archiving, post-research auto-categorization, and a delete action in the session menu. On first use, creates `<workspace>/会话-<shortId>/`, redirects the conversation working directory into it, and writes the conversation transcript to `对话记录.md`; when each research turn ends, loose files (tables, charts, documents, ...) are moved into category subfolders with automatic names (`调研<N>_<original>`); a \"Delete conversation and its contents\" row in the session menu permanently removes the conversation, its folder, and everything inside.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/myqy91615-web/dsh-conversation-folders.git"
+  },
+  "homepage": "https://github.com/myqy91615-web/dsh-conversation-folders#readme",
+  "bugs": {
+    "url": "https://github.com/myqy91615-web/dsh-conversation-folders/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "deepseek-harness-plugin",
+    "plugin",
+    "conversation",
+    "folder",
+    "workspace",
+    "session",
+    "research",
+    "archive",
+    "categorize",
+    "cordis"
+  ],
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "lib",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": []
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.0-rc <5"
+  },
+  "engines": {
+    "node": "^22.15.0 || >=24.0.0"
+  },
+  "scripts": {
+    "check": "node --check lib/index.js && node --check lib/fs-helpers.js && node --check lib/state-store.js && node --check lib/organize.js && node --check lib/transcript.js && node --check client.js && node test/run-tests.mjs && node test/smoke-test.mjs"
+  }
+}

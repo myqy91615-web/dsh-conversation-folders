@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="cf-g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6b9bf7"/>
+      <stop offset="1" stop-color="#3f6fe0"/>
+    </linearGradient>
+  </defs>
+  <!-- 文件夹 -->
+  <path d="M7 18a5 5 0 0 1 5-5h13.5l4.5 5.5H52a5 5 0 0 1 5 5v24a5 5 0 0 1-5 5H12a5 5 0 0 1-5-5V18z" fill="url(#cf-g)"/>
+  <!-- 文件夹折页亮边 -->
+  <path d="M26 13l4.9 6H52a4.6 4.6 0 0 1 2.6.8L52.6 18.2 49 13H26z" fill="#f3f7ff" opacity="0.35"/>
+  <!-- 对话气泡（三点） -->
+  <g fill="#ffffff">
+    <circle cx="20" cy="34" r="3"/>
+    <circle cx="32" cy="34" r="3"/>
+    <circle cx="44" cy="34" r="3"/>
+  </g>
+</svg>
