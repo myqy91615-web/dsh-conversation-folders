@@ -56,9 +56,12 @@ async function main() {
     transcriptName: "对话记录.md",
     categorize: true,
     runNamePrefix: "调研",
+    idleDelayMs: 300,
+    renameToTitle: true,
     settleDelayMs: 50,
     deleteTimeoutMs: 1500
   };
+  const titles = new Map(); // sessionId -> { title, source: { kind: "provider", provider: "fake" } }
 
   const ctx = {
     config,
@@ -79,6 +82,7 @@ async function main() {
       if (name === "dshHomePath") return (...seg) => join(fakeHome, ...seg);
       if (name === "workspaceRegistry") return { list: () => wsys };
       if (name === "sessions") return { get: (id) => liveSessions.get(id) };
+      if (name === "sessionTitle") return { get: (session) => titles.get(session.id) || { title: "", source: { kind: "fallback" }, messageSeqs: [], eventSeq: 0, updatedAt: 0 } };
       if (name === "sessionProjections") return { stateOf: (session, key) => key === "workingDirectory" ? workingDirState.get(session.id) ?? null : null };
       if (name === "sessionQuery") return {
         readSession: async (id) => {
@@ -206,7 +210,7 @@ async function main() {
     assert.equal(text.includes("Current runtime context"), false);
   });
 
-  console.log("== 4) 调研结束（turn/end）→ 分类归档 + 自动命名 + 整理清单 ==");
+  console.log("== 4) 对话进行中不整理 → 空闲后才分类归档 + 自动命名 + 整理清单 ==");
   await writeFile(join(sourceFolder, "行业数据对比.xlsx"), "xlsx-bytes");
   await writeFile(join(sourceFolder, "趋势图.png"), "png-bytes");
   await writeFile(join(sourceFolder, "调研1_已整理.csv"), "already-named");
@@ -218,7 +222,12 @@ async function main() {
   const longName = "x".repeat(200) + ".xlsx";
   await writeFile(join(sourceFolder, longName), "long");
   fire(s1, turnEndEvent(1));
-  await sleep(400);
+  await sleep(80);
+  await check("回合刚结束时文件仍在原位（对话中随时可查看）", async () => {
+    assert.equal(await pathExists(join(sourceFolder, "行业数据对比.xlsx")), true);
+    assert.equal(await pathExists(join(sourceFolder, "01-表格", "调研1_行业数据对比.xlsx")), false);
+  });
+  await sleep(600); // 超过 idleDelayMs，空闲整理触发
   await check("表格文件移入 01-表格 并自动命名", async () => {
     assert.equal(await pathExists(join(sourceFolder, "01-表格", "调研1_行业数据对比.xlsx")), true);
     assert.equal(await pathExists(join(sourceFolder, "行业数据对比.xlsx")), false);
@@ -239,9 +248,9 @@ async function main() {
     const capped = names.find((name) => name.startsWith("调研1_") && name.endsWith(".xlsx") && name.length <= 160 && name.includes("xxxx"));
     assert.ok(capped !== undefined, JSON.stringify(names));
   });
-  await check("对话记录追加调研结束与整理清单", async () => {
+  await check("对话记录追加整理章节与清单", async () => {
     const text = await readFile(transcriptFile, "utf8");
-    assert.ok(text.includes("## 调研 1 结束"), text);
+    assert.ok(text.includes("## 整理 · "), text);
     assert.ok(text.includes("01-表格/调研1_行业数据对比.xlsx"), text);
     assert.ok(text.includes("02-图表/调研1_趋势图.png"), text);
   });
@@ -249,10 +258,12 @@ async function main() {
     const state = JSON.parse(await readFile(stateFile, "utf8"));
     assert.equal(state.entries[SESSION_ID].run, 1);
   });
-  await check("第二轮调研序号递增", async () => {
+  await check("第二轮调研序号递增（仍等空闲后整理）", async () => {
     await writeFile(join(sourceFolder, "notes.md"), "md");
     fire(s1, turnEndEvent(2));
-    await sleep(400);
+    await sleep(80);
+    assert.equal(await pathExists(join(sourceFolder, "notes.md")), true);
+    await sleep(600);
     assert.equal(await pathExists(join(sourceFolder, "03-文档", "调研2_notes.md")), true);
     const state = JSON.parse(await readFile(stateFile, "utf8"));
     assert.equal(state.entries[SESSION_ID].run, 2);
@@ -371,6 +382,39 @@ async function main() {
     await pending;
     assert.equal(res.status, 500);
     assert.equal(JSON.parse(res.body).ok, false);
+  });
+
+  console.log("== 10) 空闲整理时按对话标题重命名文件夹（只改一次） ==");
+  const SESSION_ID_4 = "session-abcdef12-3456-7890-abcd-ef1234567890";
+  const s4 = makeSession(SESSION_ID_4, wsRoot);
+  liveSessions.set(SESSION_ID_4, s4);
+  fire(s4, userEvent("帮我写一份年度总结"));
+  await sleep(200);
+  const tokenFolder4 = join(wsRoot, "会话-abcdef123456");
+  await check("标题未就绪时先用短 ID 文件夹", async () => {
+    assert.equal(await pathExists(tokenFolder4), true);
+  });
+  const snapshot = (title) => ({ title, messageSeqs: [], source: { kind: "provider", provider: "fake" }, eventSeq: 0, updatedAt: Date.now() });
+  titles.set(SESSION_ID_4, snapshot("年度总结:我的2026"));
+  fire(s4, turnEndEvent(1));
+  await sleep(700); // 空闲整理：改为标题名
+  const titledFolder4 = join(wsRoot, "会话-年度总结 我的2026");
+  await check("空闲整理时文件夹改为对话标题", async () => {
+    assert.equal(await pathExists(titledFolder4), true);
+    assert.equal(await pathExists(tokenFolder4), false);
+    assert.equal(workingDirState.get(SESSION_ID_4), titledFolder4);
+  });
+  await check("改名后对话记录随文件夹移动并标注改名", async () => {
+    const text = await readFile(join(titledFolder4, "对话记录.md"), "utf8");
+    assert.ok(text.includes("# 对话记录"), text);
+    assert.ok(text.includes("文件夹名已按对话标题更新为"), text);
+  });
+  titles.set(SESSION_ID_4, snapshot("另一个标题"));
+  fire(s4, turnEndEvent(2));
+  await sleep(700);
+  await check("标题再次变化不再移动文件夹（只改一次）", async () => {
+    assert.equal(await pathExists(titledFolder4), true);
+    assert.equal(await pathExists(join(wsRoot, "会话-另一个标题")), false);
   });
 
   await rm(root, { recursive: true, force: true });

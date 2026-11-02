@@ -10,8 +10,10 @@ import {
   assertSafeFolderTarget,
   encodeFsSessionSegment,
   folderNameFor,
+  folderNameFromTitle,
   folderTokenFor,
   removeFolderIfSafe,
+  sanitizeFolderBase,
   sessionArtifactExists
 } from "../lib/fs-helpers.js";
 import { createStateStore } from "../lib/state-store.js";
@@ -28,7 +30,7 @@ import {
   formatLocalTime,
   renderAssistantSection,
   renderHeader,
-  renderTurnEndSection,
+  renderOrganizeSection,
   renderUserSection,
   textBlocksToMarkdown
 } from "../lib/transcript.js";
@@ -63,6 +65,32 @@ async function main() {
   await test("文件夹名带前缀", () => {
     assert.equal(folderNameFor("session-29c06ebb-e914-417e-8ab1-5af0a83ddbce"), "会话-29c06ebbe914");
     assert.equal(folderNameFor("session-29c06ebb-e914-417e-8ab1-5af0a83ddbce", "对话 "), "对话 29c06ebbe914");
+  });
+
+  console.log("== 对话标题 -> 文件夹名 ==");
+  await test("标题清洗：非法字符、空白、首尾点", () => {
+    assert.equal(sanitizeFolderBase("帮我调研:白酒/行业?"), "帮我调研 白酒 行业");
+    assert.equal(sanitizeFolderBase("  多   空格  "), "多 空格");
+    assert.equal(sanitizeFolderBase("结尾点..."), "结尾点");
+    assert.equal(sanitizeFolderBase("..."), null);
+    assert.equal(sanitizeFolderBase(""), null);
+    assert.equal(sanitizeFolderBase("a\\b*c<d>e|f"), "a b c d e f");
+  });
+  await test("标题超长截断", () => {
+    const long = "标".repeat(80);
+    const base = sanitizeFolderBase(long);
+    assert.ok(base.length <= 48, "length=" + base.length);
+  });
+  await test("Windows 保留设备名加下划线", () => {
+    assert.equal(sanitizeFolderBase("CON"), "CON_");
+    assert.equal(sanitizeFolderBase("com1"), "com1_");
+  });
+  await test("folderNameFromTitle：标题可用时用标题，否则回退短 ID", () => {
+    const id = "session-29c06ebb-e914-417e-8ab1-5af0a83ddbce";
+    assert.equal(folderNameFromTitle("白酒行业调研", id), "会话-白酒行业调研");
+    assert.equal(folderNameFromTitle("...", id), "会话-29c06ebbe914");
+    assert.equal(folderNameFromTitle(undefined, id), "会话-29c06ebbe914");
+    assert.equal(folderNameFromTitle("白酒行业调研", id, "对话 "), "对话 白酒行业调研");
   });
 
   console.log("== encodeFsSessionSegment ==");
@@ -264,12 +292,17 @@ async function main() {
     assert.ok(assistant.includes("好的，开始调研。"), assistant);
     assert.equal(renderAssistantSection({ message: { content: [{ type: "reasoning", text: "x" }] } }), null);
   });
-  await test("回合结束章节带整理清单", () => {
-    const section = renderTurnEndSection(2, [{ category: "01-表格", to: "调研2_数据.xlsx" }], 1792632529640);
-    assert.ok(section.includes("## 调研 2 结束"), section);
+  await test("整理章节带归档清单", () => {
+    const section = renderOrganizeSection(2, [{ category: "01-表格", to: "调研2_数据.xlsx" }], 1792632529640);
+    assert.ok(section.includes("## 整理 · "), section);
     assert.ok(section.includes("01-表格/调研2_数据.xlsx"), section);
-    const empty = renderTurnEndSection(1, [], 1792632529640);
+    const empty = renderOrganizeSection(1, [], 1792632529640);
     assert.ok(empty.includes("本次未发现需要整理的新文件"), empty);
+  });
+  await test("整理章节可标注文件夹改名", () => {
+    const section = renderOrganizeSection(1, [], 1792632529640, { folderName: "会话-白酒行业调研" });
+    assert.ok(section.includes("文件夹名已按对话标题更新为"), section);
+    assert.ok(section.includes("会话-白酒行业调研"), section);
   });
   await test("文件头", () => {
     const header = renderHeader("session-x", "D:\\ws");

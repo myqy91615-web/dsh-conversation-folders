@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Conversation Folders Archive",
-    "description": "One dedicated folder per conversation: transcript archived automatically, tables/charts and other files auto-categorized and renamed after each research turn; deleting a conversation permanently removes all of its files."
+    "description": "One dedicated folder per conversation, named after the conversation title: the transcript is archived automatically; tables/charts and other files are auto-categorized and renamed only after the conversation has been idle for a while, so files stay in place and viewable while it is active; deleting a conversation permanently removes all of its files."
   }
 }
