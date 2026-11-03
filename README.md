@@ -41,13 +41,19 @@ D:\deepseek工作区\
 
 ## 安装
 
-在 DSH 的「插件」管理界面添加 `dsh-conversation-folders`，或通过 CLI：
+已收录到 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 插件列表，详情页：<https://awesome-dsh-plugin.com/p/myqy91615-web/dsh-conversation-folders/>
+
+通过 CLI 从 GitHub 安装（推荐）：
 
 ```powershell
-dsh plugin --profile desktop add npm:dsh-conversation-folders
+dsh plugin --profile desktop add github:myqy91615-web/dsh-conversation-folders
 ```
 
-本目录的开发版以 `file:` 方式链接安装（见 profile 的 `package.json`）。
+也可以在 DSH 的「插件」管理界面添加，或下载本仓库后以本地路径 / `file:` 方式安装（本目录的开发版即以 `file:` 链接方式安装，见 profile 的 `package.json`）。
+
+> 注意：本包**尚未发布到 npm**，所以 `dsh plugin add npm:dsh-conversation-folders` 要等 [发布到 npm](#发布到插件市场dsh-market) 后才可用；现在请用上面的 GitHub 命令。
+
+安装或升级后需**刷新页面**（必要时重启 DSH），让 `client.js`（会话菜单里的「删除对话及其内容」）生效。
 
 ## 配置
 
@@ -94,14 +100,20 @@ dsh plugin --profile desktop add npm:dsh-conversation-folders
 
 ## 发布到插件市场（DSH Market）
 
-本包已满足 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 收录的硬性要求：`package.json` 声明 `dsh.bundle`、可独立安装、真实可运行代码、MIT 许可、无安装期脚本。
+**当前状态**
 
-1. 把本仓库推送到 GitHub（仓库需创建满 1 天，CI 自动检查），并给仓库加 `dsh-plugin` topic；
-2. 向 registry 提一个 PR，新增 `data/plugins/<owner>__dsh-conversation-folders.yml`，内容模板见 [`market-entry.yml`](./market-entry.yml)（把 `<OWNER>` 换成你的 GitHub 用户名）；
-3. 可选：`npm publish` 发布为 `dsh-conversation-folders`（包名已验证可用），并在 `package.json` 里补 `repository` 字段指回仓库，市场会展示下载量；
+- ✅ 已收录 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 列表：PR [#11096](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/11096) 已合并，条目为 `data/plugins/myqy91615-web__dsh-conversation-folders.yml`；
+- ✅ 官网详情页已上线：<https://awesome-dsh-plugin.com/p/myqy91615-web/dsh-conversation-folders/>；
+- ⏳ 「应用内市场 Discover」索引（npm 包 `dsh-plugin-catalog`）**只收录已发布到 npm 的插件**，所以还需要一步 `npm publish` 才能被市场搜索到。
+
+**发布到 npm（可选，做了就能进市场索引）**
+
+1. 注册/登录 npm 账号：`npm login`；
+2. 在仓库根目录发布：`npm publish`（包名 `dsh-conversation-folders` 已验证可用；`package.json` 已含 `repository` 字段）；
+3. 市场每日重建索引后即可在「插件 → Discover」搜索安装；README 里的 `npm:dsh-conversation-folders` 命令也会随之可用；
 4. 可选：放置 `screenshots.json`（1–8 张 GitHub 托管图片）让市场详情页展示截图。
 
-市场收录后会从 [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com) 的目录一键安装。
+市场收录后可从 [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com) 的目录一键安装，或直接用上面的 GitHub 命令。
 
 ## 限制
 
