@@ -14,10 +14,10 @@
  */
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdtemp, mkdir, readFile, writeFile, rm, stat, readdir } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm, stat, readdir, lstat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { apply } from "../lib/index.js";
+import { apply, folderNameFor } from "../lib/index.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -58,10 +58,14 @@ async function main() {
     runNamePrefix: "调研",
     idleDelayMs: 300,
     renameToTitle: true,
+    keepPaths: true,
+    chooseOutputDir: true,
     settleDelayMs: 50,
     deleteTimeoutMs: 1500
   };
   const titles = new Map(); // sessionId -> { title, source: { kind: "provider", provider: "fake" } }
+  /** 假目录选择器返回值：null = 用户取消；字符串 = 用户选的目录。 */
+  let pickedDir = null;
 
   const ctx = {
     config,
@@ -91,6 +95,7 @@ async function main() {
         }
       };
       if (name === "webServer") return { register: (spec) => { ctx.webSpec = spec; } };
+      if (name === "directoryPicker") return { capability: () => ({ kind: "native", pick: async () => pickedDir }) };
       if (name === "agents" || name === "sessionPersistence") return {};
       return undefined;
     },
@@ -230,7 +235,15 @@ async function main() {
   await sleep(600); // 超过 idleDelayMs，空闲整理触发
   await check("表格文件移入 01-表格 并自动命名", async () => {
     assert.equal(await pathExists(join(sourceFolder, "01-表格", "调研1_行业数据对比.xlsx")), true);
-    assert.equal(await pathExists(join(sourceFolder, "行业数据对比.xlsx")), false);
+  });
+  await check("归档后原文件名处保留可直接打开的入口（硬链接）", async () => {
+    // 对话里点击旧路径（相对/绝对）依旧能打开：根目录保留同一份数据的入口
+    assert.equal(await pathExists(join(sourceFolder, "行业数据对比.xlsx")), true);
+    assert.equal(await readFile(join(sourceFolder, "行业数据对比.xlsx"), "utf8"), "xlsx-bytes");
+    const kept = await stat(join(sourceFolder, "行业数据对比.xlsx"));
+    const archived = await stat(join(sourceFolder, "01-表格", "调研1_行业数据对比.xlsx"));
+    assert.equal(kept.size, archived.size);
+    if (typeof kept.ino === "number" && kept.ino !== 0) assert.equal(kept.ino, archived.ino);
   });
   await check("图片文件移入 02-图表 并自动命名", async () => {
     assert.equal(await pathExists(join(sourceFolder, "02-图表", "调研1_趋势图.png")), true);
@@ -241,7 +254,7 @@ async function main() {
   await check("目标名被占用时自动去重", async () => {
     assert.equal(await readFile(join(sourceFolder, "01-表格", "调研1_preexisting.xlsx"), "utf8"), "old");
     assert.equal(await pathExists(join(sourceFolder, "01-表格", "调研1_preexisting_2.xlsx")), true);
-    assert.equal(await pathExists(join(sourceFolder, "preexisting.xlsx")), false);
+    assert.equal(await readFile(join(sourceFolder, "preexisting.xlsx"), "utf8"), "new");
   });
   await check("超长文件名被截断", async () => {
     const names = await readdir(join(sourceFolder, "01-表格"));
@@ -401,8 +414,14 @@ async function main() {
   const titledFolder4 = join(wsRoot, "会话-年度总结 我的2026");
   await check("空闲整理时文件夹改为对话标题", async () => {
     assert.equal(await pathExists(titledFolder4), true);
-    assert.equal(await pathExists(tokenFolder4), false);
     assert.equal(workingDirState.get(SESSION_ID_4), titledFolder4);
+  });
+  await check("改名后旧短 ID 路径仍能解析（目录联接）", async () => {
+    assert.equal(await pathExists(tokenFolder4), true);
+    const info = await lstat(tokenFolder4);
+    assert.equal(info.isSymbolicLink(), true);
+    // 旧路径能直接打开文件夹里的文件（对话里的旧绝对路径依旧可用）
+    assert.equal(await pathExists(join(tokenFolder4, "对话记录.md")), true);
   });
   await check("改名后对话记录随文件夹移动并标注改名", async () => {
     const text = await readFile(join(titledFolder4, "对话记录.md"), "utf8");
@@ -415,6 +434,113 @@ async function main() {
   await check("标题再次变化不再移动文件夹（只改一次）", async () => {
     assert.equal(await pathExists(titledFolder4), true);
     assert.equal(await pathExists(join(wsRoot, "会话-另一个标题")), false);
+  });
+
+  console.log("== 11) 旧短 ID 路径残留空目录时，整理时替换为目录联接 ==");
+  const SESSION_ID_5 = "session-abcdef12-3456-7890-abcd-ef1234567891";
+  const s5 = makeSession(SESSION_ID_5, wsRoot);
+  liveSessions.set(SESSION_ID_5, s5);
+  fire(s5, userEvent("测试孤儿空目录"));
+  await sleep(200);
+  const tokenFolder5 = join(wsRoot, folderNameFor(SESSION_ID_5));
+  await check("标题未知时先用短 ID 文件夹", async () => {
+    assert.equal(await pathExists(tokenFolder5), true);
+  });
+  // 模拟 v0.4.0 时代的遗留：文件夹被改成标题名后，旧短 ID 路径残留了一个空目录
+  titles.set(SESSION_ID_5, snapshot("孤儿空目录测试"));
+  fire(s5, turnEndEvent(1));
+  await sleep(700); // 空闲整理：改为标题名，同时建旧路径联接
+  const titledFolder5 = join(wsRoot, "会话-孤儿空目录测试");
+  await check("文件夹改为对话标题", async () => {
+    assert.equal(await pathExists(titledFolder5), true);
+  });
+  await check("旧短 ID 路径是目录联接且可解析", async () => {
+    assert.equal(await pathExists(tokenFolder5), true);
+    const info = await lstat(tokenFolder5);
+    assert.equal(info.isSymbolicLink(), true);
+  });
+  // 制造孤儿空目录后修复：先删光文件夹内容模拟空目录残留
+  await rm(tokenFolder5, { recursive: true, force: true });
+  await mkdir(tokenFolder5, { recursive: true });
+  await check("空目录残留可通过 organize-session 修复", async () => {
+    // 触发整理（此时没有标题变化，走 ensurePathEntries 的补齐逻辑）
+    fire(s5, turnEndEvent(2));
+    await sleep(700);
+    const info = await lstat(tokenFolder5);
+    assert.equal(info.isSymbolicLink(), true);
+    assert.equal(await pathExists(join(tokenFolder5, "对话记录.md")), true);
+  });
+
+  console.log("== 12) 对话开始时自动弹目录选择 → 整理后生产文件复制到输出目录 ==");
+  const SESSION_ID_6 = "session-12121212-3434-5656-7878-909090909090";
+  const s6 = makeSession(SESSION_ID_6, wsRoot);
+  liveSessions.set(SESSION_ID_6, s6);
+  const outputRoot = join(root, "my-outputs");
+  pickedDir = outputRoot; // 用户在弹出的选择框里选了输出目录
+  fire(s6, userEvent("帮我写一份调研报告"));
+  await sleep(300);
+  const folder6 = join(wsRoot, folderNameFor(SESSION_ID_6));
+  await check("自动弹框选择的输出目录被写入映射", async () => {
+    const state = JSON.parse(await readFile(stateFile, "utf8"));
+    assert.equal(state.entries[SESSION_ID_6].outputDir, outputRoot);
+    assert.equal(state.entries[SESSION_ID_6].outputPromoted, true);
+  });
+  await writeFile(join(folder6, "报告正文.docx"), "docx-bytes");
+  await writeFile(join(folder6, "数据表.xlsx"), "xlsx-bytes");
+  fire(s6, turnEndEvent(1));
+  await sleep(600); // 空闲整理：归档 + 复制到输出目录
+  await check("整理后生产文件复制到 <输出目录>/<会话文件夹名>/", async () => {
+    const outSessionDir = join(outputRoot, folderNameFor(SESSION_ID_6));
+    assert.equal(await pathExists(join(outSessionDir, "调研1_报告正文.docx")), true);
+    assert.equal(await pathExists(join(outSessionDir, "调研1_数据表.xlsx")), true);
+    assert.equal(await readFile(join(outSessionDir, "调研1_数据表.xlsx"), "utf8"), "xlsx-bytes");
+  });
+  await check("整理章节标注输出目录复制", async () => {
+    const text = await readFile(join(folder6, "对话记录.md"), "utf8");
+    assert.ok(text.includes("已复制 2 个生产文件到输出目录"), text);
+  });
+  await check("输出目录不在会话文件夹内部（不产生递归归档）", async () => {
+    // 输出目录位于 workspace 之外，整理逻辑不会再把副本归档回去
+    const state = JSON.parse(await readFile(stateFile, "utf8"));
+    assert.ok(state.entries[SESSION_ID_6].outputDir.startsWith(root), state.entries[SESSION_ID_6].outputDir);
+    const names = await readdir(join(folder6, "01-表格"));
+    assert.equal(names.filter((n) => n.startsWith("调研1_")).length, 1);
+  });
+
+  console.log("== 13) 取消选择 → 不设置输出目录（只提醒一次） ==");
+  const SESSION_ID_7 = "session-78787878-9090-1212-3434-565656565656";
+  const s7 = makeSession(SESSION_ID_7, wsRoot);
+  liveSessions.set(SESSION_ID_7, s7);
+  pickedDir = null; // 用户点了取消
+  fire(s7, userEvent("取消输出目录的选择"));
+  await sleep(300);
+  await check("取消弹出框后未设置输出目录", async () => {
+    const state = JSON.parse(await readFile(stateFile, "utf8"));
+    assert.equal(state.entries[SESSION_ID_7].outputDir, undefined);
+    assert.equal(state.entries[SESSION_ID_7].outputPromoted, true); // 只提醒一次
+  });
+
+  console.log("== 14) 删除会话 → 输出目录副本一并彻底删除 ==");
+  await check("删除会话后输出目录副本被清除", async () => {
+    liveSessions.delete(SESSION_ID_6);
+    const req = new EventEmitter();
+    req.method = "POST";
+    req.url = "/conversation-folders/api/delete-session";
+    const res = {
+      status: 0,
+      body: "",
+      writeHead(status) { this.status = status; },
+      end(body) { this.body = String(body); }
+    };
+    const pending = ctx.webSpec.handler(req, res);
+    req.emit("data", Buffer.from(JSON.stringify({ sessionId: SESSION_ID_6 })));
+    req.emit("end");
+    await pending;
+    assert.equal(res.status, 200);
+    assert.equal(await pathExists(join(outputRoot, folderNameFor(SESSION_ID_6))), false);
+    assert.equal(await pathExists(folder6), false);
+    // 输出根目录本身保留（用户选的位置不该被删）
+    assert.equal(await pathExists(outputRoot), true);
   });
 
   await rm(root, { recursive: true, force: true });

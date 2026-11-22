@@ -8,11 +8,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   assertSafeFolderTarget,
+  createJunction,
   encodeFsSessionSegment,
   folderNameFor,
   folderNameFromTitle,
   folderTokenFor,
+  isLinkLike,
+  linkOrCopy,
+  pathExists,
   removeFolderIfSafe,
+  removeJunction,
   sanitizeFolderBase,
   sessionArtifactExists
 } from "../lib/fs-helpers.js";
@@ -304,11 +309,61 @@ async function main() {
     assert.ok(section.includes("文件夹名已按对话标题更新为"), section);
     assert.ok(section.includes("会话-白酒行业调研"), section);
   });
+  await test("整理章节可标注输出目录复制", () => {
+    const section = renderOrganizeSection(1, [], 1792632529640, { outputDir: "D:\\我的产出\\会话-白酒行业调研", outputCopied: 3 });
+    assert.ok(section.includes("已复制 3 个生产文件到输出目录"), section);
+    assert.ok(section.includes("D:\\我的产出\\会话-白酒行业调研"), section);
+    // 未复制时不出现该行
+    const none = renderOrganizeSection(1, [], 1792632529640, { outputDir: "D:/x", outputCopied: 0 });
+    assert.ok(!none.includes("输出目录"), none);
+  });
   await test("文件头", () => {
     const header = renderHeader("session-x", "D:\\ws");
     assert.ok(header.includes("# 对话记录"));
     assert.ok(header.includes("session-x"));
     assert.ok(header.includes("D:\\ws"));
+  });
+
+  console.log("== 旧路径保活（硬链接 / 目录联接） ==");
+  await test("归档文件可在原路径保留入口（硬链接，内容一致）", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "dsh-cf-link-"));
+    try {
+      const archivedDir = join(dir, "01-表格");
+      await mkdir(archivedDir, { recursive: true });
+      await writeFile(join(archivedDir, "调研1_数据.xlsx"), "cells");
+      const result = await linkOrCopy(join(archivedDir, "调研1_数据.xlsx"), join(dir, "数据.xlsx"));
+      assert.ok(result === "link" || result === "copy", result);
+      assert.equal(await readFile(join(dir, "数据.xlsx"), "utf8"), "cells");
+      // 已存在时不覆盖
+      assert.equal(await linkOrCopy(join(archivedDir, "调研1_数据.xlsx"), join(dir, "数据.xlsx")), "exists");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+  await test("改名前后的旧文件夹路径均可解析（目录联接）", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "dsh-cf-junction-"));
+    try {
+      const real = join(dir, "会话-标题");
+      await mkdir(real, { recursive: true });
+      await writeFile(join(real, "a.txt"), "hi");
+      const alias = join(dir, "会话-短ID");
+      const created = await createJunction(real, alias);
+      assert.equal(created, "created", created);
+      assert.equal(await isLinkLike(alias), true);
+      assert.equal(await pathExists(join(alias, "a.txt")), true);
+      assert.equal(await readFile(join(alias, "a.txt"), "utf8"), "hi");
+      // 已存在不覆盖
+      assert.equal(await createJunction(real, alias), "exists");
+      // 只删联接，不动真实目录
+      assert.equal(await removeJunction(alias), true);
+      assert.equal(await pathExists(alias), false);
+      assert.equal(await pathExists(join(real, "a.txt")), true);
+      // 对真实目录调用 removeJunction 必须拒绝
+      assert.equal(await removeJunction(real), false);
+      assert.equal(await pathExists(real), true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   console.log("");
