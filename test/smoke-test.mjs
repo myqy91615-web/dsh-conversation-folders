@@ -60,6 +60,7 @@ async function main() {
     renameToTitle: true,
     keepPaths: true,
     chooseOutputDir: true,
+    autoPromptOutputDir: false, // 默认不自动弹：弹窗由面板按钮 / /pick-output-dir 手动触发
     settleDelayMs: 50,
     deleteTimeoutMs: 1500
   };
@@ -471,19 +472,40 @@ async function main() {
     assert.equal(await pathExists(join(tokenFolder5, "对话记录.md")), true);
   });
 
-  console.log("== 12) 对话开始时自动弹目录选择 → 整理后生产文件复制到输出目录 ==");
+  console.log("== 12) 默认不自动弹 → 手动选择输出目录 → 整理后生产文件复制到输出目录 ==");
   const SESSION_ID_6 = "session-12121212-3434-5656-7878-909090909090";
   const s6 = makeSession(SESSION_ID_6, wsRoot);
   liveSessions.set(SESSION_ID_6, s6);
   const outputRoot = join(root, "my-outputs");
-  pickedDir = outputRoot; // 用户在弹出的选择框里选了输出目录
+  pickedDir = null; // 每次发消息都不该自动弹
   fire(s6, userEvent("帮我写一份调研报告"));
   await sleep(300);
   const folder6 = join(wsRoot, folderNameFor(SESSION_ID_6));
-  await check("自动弹框选择的输出目录被写入映射", async () => {
+  await check("对话开始不自动弹目录选择框（outputPromoted 未置位）", async () => {
+    const state = JSON.parse(await readFile(stateFile, "utf8"));
+    assert.equal(state.entries[SESSION_ID_6].outputPromoted, undefined);
+    assert.equal(state.entries[SESSION_ID_6].outputDir, undefined);
+  });
+  // 用户（或面板按钮）手动触发：POST /pick-output-dir
+  pickedDir = outputRoot; // 用户在弹框里选了输出目录
+  await check("手动 pick-output-dir 设置输出目录", async () => {
+    const req = new EventEmitter();
+    req.method = "POST";
+    req.url = "/conversation-folders/api/pick-output-dir";
+    const res = {
+      status: 0,
+      body: "",
+      writeHead(status) { this.status = status; },
+      end(body) { this.body = String(body); }
+    };
+    const pending = ctx.webSpec.handler(req, res);
+    req.emit("data", Buffer.from(JSON.stringify({ sessionId: SESSION_ID_6 })));
+    req.emit("end");
+    await pending;
+    assert.equal(res.status, 200, res.body);
     const state = JSON.parse(await readFile(stateFile, "utf8"));
     assert.equal(state.entries[SESSION_ID_6].outputDir, outputRoot);
-    assert.equal(state.entries[SESSION_ID_6].outputPromoted, true);
+    assert.equal(state.entries[SESSION_ID_6].outputPromoted, true); // 已提示过
   });
   await writeFile(join(folder6, "报告正文.docx"), "docx-bytes");
   await writeFile(join(folder6, "数据表.xlsx"), "xlsx-bytes");
@@ -507,17 +529,35 @@ async function main() {
     assert.equal(names.filter((n) => n.startsWith("调研1_")).length, 1);
   });
 
-  console.log("== 13) 取消选择 → 不设置输出目录（只提醒一次） ==");
+  console.log("== 13) 手动触发时取消选择 → 不设置输出目录 ==");
   const SESSION_ID_7 = "session-78787878-9090-1212-3434-565656565656";
   const s7 = makeSession(SESSION_ID_7, wsRoot);
   liveSessions.set(SESSION_ID_7, s7);
   pickedDir = null; // 用户点了取消
   fire(s7, userEvent("取消输出目录的选择"));
   await sleep(300);
-  await check("取消弹出框后未设置输出目录", async () => {
+  await check("对话开始不自动弹（新的会话同样不弹）", async () => {
+    const state = JSON.parse(await readFile(stateFile, "utf8"));
+    assert.equal(state.entries[SESSION_ID_7].outputPromoted, undefined);
+  });
+  await check("手动触发时取消弹出框 → 未设置输出目录", async () => {
+    const req = new EventEmitter();
+    req.method = "POST";
+    req.url = "/conversation-folders/api/pick-output-dir";
+    const res = {
+      status: 0,
+      body: "",
+      writeHead(status) { this.status = status; },
+      end(body) { this.body = String(body); }
+    };
+    const pending = ctx.webSpec.handler(req, res);
+    req.emit("data", Buffer.from(JSON.stringify({ sessionId: SESSION_ID_7 })));
+    req.emit("end");
+    await pending;
+    assert.equal(res.status, 200, res.body);
     const state = JSON.parse(await readFile(stateFile, "utf8"));
     assert.equal(state.entries[SESSION_ID_7].outputDir, undefined);
-    assert.equal(state.entries[SESSION_ID_7].outputPromoted, true); // 只提醒一次
+    assert.equal(state.entries[SESSION_ID_7].outputPromoted, true); // 已提示过，不会重复弹
   });
 
   console.log("== 14) 删除会话 → 输出目录副本一并彻底删除 ==");
